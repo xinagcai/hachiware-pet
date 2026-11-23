@@ -98,7 +98,9 @@
         bottom: 96px;
         width: 292px;
         max-height: 150px;
-        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
         box-sizing: border-box;
         padding: 8px;
         border: 1px solid rgb(0 0 0 / 10%);
@@ -106,6 +108,21 @@
         background: rgb(255 255 255 / 96%);
         box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
         backdrop-filter: blur(10px);
+      }
+      /* Only the list scrolls: the summary row and the rounded frame stay put. */
+      #panel-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 2px;
+      }
+      #panel-body::-webkit-scrollbar {
+        width: 5px;
+      }
+      #panel-body::-webkit-scrollbar-thumb {
+        border-radius: 3px;
+        background: rgb(0 0 0 / 16%);
       }
       #panel[hidden] {
         display: none;
@@ -282,8 +299,10 @@
           <button class="tool" id="btn-park" type="button">停靠</button>
           <button class="tool" id="btn-skin" type="button">＋ 新皮肤</button>
         </div>
-        <div id="rows"></div>
-        <div id="skins" hidden></div>
+        <div id="panel-body">
+          <div id="rows"></div>
+          <div id="skins" hidden></div>
+        </div>
       </div>
       <button id="pet" type="button" aria-label="会话宠物">
         <span id="art"></span>
