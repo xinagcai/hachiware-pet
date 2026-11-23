@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Hachiware pet",
+    "description": "Hachiware, a transparent always-on-top pet for the macOS desktop: breathes while sessions run, turns alert when an approval is pending. Observes only; you still answer approvals in the composer.",
+    "detail": "docs/DETAIL.md"
+  }
+}

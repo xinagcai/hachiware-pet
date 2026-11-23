@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Session pet</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        font: 12px/1.5 -apple-system, "PingFang SC", "Segoe UI", sans-serif;
+        color: #1d2129;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #stage {
+        position: fixed;
+        inset: 0;
+      }
+      #pet {
+        position: absolute;
+        right: 16px;
+        bottom: 14px;
+        width: 76px;
+        height: 76px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        cursor: grab;
+        touch-action: none;
+        transition: filter 160ms ease, transform 220ms ease;
+        -webkit-app-region: no-drag;
+      }
+      #pet:active {
+        cursor: grabbing;
+      }
+      #pet.dragging {
+        transition: none;
+      }
+      #pet svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+        animation: breathe 3.2s ease-in-out infinite;
+      }
+      #pet.alert svg {
+        animation: bounce 900ms ease-in-out infinite;
+      }
+      #pet.tired svg {
+        animation: breathe 5.6s ease-in-out infinite;
+      }
+      #art {
+        display: block;
+      }
+      #art.sprite {
+        background-repeat: no-repeat;
+        animation: breathe 3.2s ease-in-out infinite;
+      }
+      #pet.alert #art.sprite {
+        animation: bounce 900ms ease-in-out infinite;
+      }
+      #pet.tired #art.sprite {
+        animation: breathe 5.6s ease-in-out infinite;
+      }
+      @keyframes breathe {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-1.5px) scale(1.018); }
+      }
+      @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        45% { transform: translateY(-7px); }
+        70% { transform: translateY(-1px); }
+      }
+      #badge {
+        position: absolute;
+        top: -2px;
+        right: -2px;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: #f54a45;
+        color: #fff;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 16px;
+        text-align: center;
+        box-shadow: 0 2px 6px rgb(0 0 0 / 30%);
+      }
+      #badge[hidden] {
+        display: none;
+      }
+      #panel {
+        position: absolute;
+        right: 8px;
+        bottom: 96px;
+        width: 292px;
+        max-height: 150px;
+        overflow: auto;
+        box-sizing: border-box;
+        padding: 8px;
+        border: 1px solid rgb(0 0 0 / 10%);
+        border-radius: 12px;
+        background: rgb(255 255 255 / 96%);
+        box-shadow: 0 10px 28px rgb(0 0 0 / 18%);
+        backdrop-filter: blur(10px);
+      }
+      #panel[hidden] {
+        display: none;
+      }
+      .row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        width: 100%;
+        padding: 4px 6px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: rgb(0 0 0 / 6%);
+      }
+      .dot {
+        flex: none;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #b8bec9;
+      }
+      .dot.approval { background: #f5a623; }
+      .dot.running { background: #2f9e44; }
+      .name {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .meta {
+        flex: none;
+        color: #6b7280;
+        font-size: 11px;
+      }
+      .empty {
+        padding: 6px;
+        color: #6b7280;
+        text-align: center;
+      }
+      .summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 8px;
+        align-items: center;
+        padding: 2px 6px 6px;
+        border-bottom: 1px solid rgb(0 0 0 / 6%);
+        margin-bottom: 4px;
+        color: #4b5563;
+        font-size: 11px;
+      }
+      .spacer { display: none; }
+      #summary-text { flex: 1 1 100%; }
+      .tool {
+        padding: 2px 6px;
+        border: 1px solid rgb(0 0 0 / 10%);
+        border-radius: 6px;
+        background: #fff;
+        color: #4b5563;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .tool:hover { background: rgb(0 0 0 / 4%); }
+      #toast {
+        position: absolute;
+        right: 8px;
+        bottom: 258px;
+        max-width: 292px;
+        padding: 7px 11px;
+        border-radius: 9px;
+        background: rgb(17 24 39 / 94%);
+        color: #f9fafb;
+        font-size: 11px;
+        line-height: 1.5;
+        box-shadow: 0 8px 20px rgb(0 0 0 / 28%);
+      }
+      #toast[hidden] { display: none; }
+      /* One line that scrolls sideways: swipe with the pointer, or use the
+         wheel/trackpad. The scrollbar itself stays hidden. */
+      #skins {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 4px;
+        padding: 6px 6px 2px;
+        margin-top: 4px;
+        border-top: 1px solid rgb(0 0 0 / 6%);
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        scroll-snap-type: x proximity;
+        overscroll-behavior-x: contain;
+        cursor: grab;
+      }
+      #skins[hidden] {
+        display: none;
+      }
+      #skins::-webkit-scrollbar {
+        display: none;
+      }
+      #skins.dragging {
+        cursor: grabbing;
+        scroll-snap-type: none;
+      }
+      #skins .chip {
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+        border: 1px solid rgb(0 0 0 / 12%);
+        border-radius: 999px;
+        background: #fff;
+        scroll-snap-align: start;
+      }
+      #skins .chip.active {
+        background: #111827;
+        border-color: #111827;
+      }
+      #skins .chip-name {
+        max-width: 96px;
+        padding: 1px 4px 1px 8px;
+        border: 0;
+        background: none;
+        color: #4b5563;
+        font-size: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        cursor: pointer;
+      }
+      #skins .chip.active .chip-name {
+        color: #f9fafb;
+      }
+      #skins .chip-del {
+        width: 16px;
+        height: 16px;
+        margin-right: 2px;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: none;
+        color: #9ca3af;
+        font-size: 11px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      #skins .chip-del:hover {
+        background: #fee2e2;
+        color: #b91c1c;
+      }
+      #skins .chip-del.armed {
+        width: auto;
+        padding: 0 4px;
+        background: #b91c1c;
+        color: #fff;
+      }
+      #skins .chip.active .chip-del {
+        color: #9ca3af;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="toast" hidden></div>
+      <div id="panel" hidden>
+        <div class="summary">
+          <span id="summary-text">暂无会话</span>
+          <span class="spacer"></span>
+          <button class="tool" id="btn-focus" type="button">回到 Harness</button>
+          <button class="tool" id="btn-park" type="button">停靠</button>
+          <button class="tool" id="btn-skin" type="button">＋ 新皮肤</button>
+        </div>
+        <div id="rows"></div>
+        <div id="skins" hidden></div>
+      </div>
+      <button id="pet" type="button" aria-label="会话宠物">
+        <span id="art"></span>
+        <span id="badge" hidden></span>
+      </button>
+    </div>
+    <script src="renderer.js"></script>
+  </body>
+</html>

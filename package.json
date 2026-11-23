@@ -1,0 +1,61 @@
+{
+  "name": "hachiware-pet",
+  "version": "0.2.4",
+  "type": "module",
+  "description": "Desktop pet for DeepSeek Harness: an always-on-top window that shows session activity, run time and pending approvals. macOS + Windows.",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.png"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.png",
+    "README.md",
+    "pet/index.html",
+    "pet/renderer.js",
+    "helper/Info.plist",
+    "helper/build.sh",
+    "helper/main.swift",
+    "helper/bin/HachiwarePet.app",
+    "helper-win/HachiwarePet.csproj",
+    "helper-win/Program.cs",
+    "helper-win/build.ps1",
+    "helper/bin/win",
+    "README.en.md",
+    "LICENSE",
+    "scripts"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "desktop-pet",
+    "macos",
+    "windows",
+    "webview2"
+  ],
+  "os": [
+    "darwin",
+    "win32"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xinagcai/hachiware-pet.git"
+  },
+  "homepage": "https://github.com/xinagcai/hachiware-pet#readme",
+  "bugs": {
+    "url": "https://github.com/xinagcai/hachiware-pet/issues"
+  },
+  "scripts": {
+    "verify": "node scripts/verify.mjs"
+  }
+}

@@ -1,0 +1,21 @@
+# runtime + build artifacts
+dist/
+*.tgz
+node_modules/
+helper/build.log
+helper/bin/module-cache/
+
+# character skins are downloaded by the user at runtime and are NOT
+# redistributed with this repo (third-party fan art from Petdex)
+pet/skins/
+
+# macOS
+.DS_Store
+
+# windows build outputs
+helper-win/bin/
+helper-win/obj/
+*.pdb
+
+# understand-anything graph artifacts
+.ua/
