@@ -18,6 +18,9 @@ import { fileURLToPath } from 'node:url';
 export const inject = ['sessions', 'agents'];
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+// A linked checkout resolves outside node_modules; only there does a source
+// edit justify recompiling the companion binary.
+const devCheckout = !here.split(path.sep).includes('node_modules');
 const isWindows = process.platform === 'win32';
 const dataDir = isWindows
   ? path.join(process.env.APPDATA || path.join(homedir(), 'AppData', 'Roaming'), 'dsh-hachiware-pet')
@@ -595,19 +598,27 @@ export function apply(ctx) {
       });
       return;
     }
+    if (existsSync(helperBinary) && !devCheckout && process.env.DSH_HACHIWARE_PET_DEV !== '1') {
+      // Installed copy: the published binary is the artifact. Rebuilding it in
+      // node_modules would need a Swift toolchain the user may not have.
+      done();
+      return;
+    }
     const sources = [
       helperSource,
       path.join(here, 'pet', 'index.html'),
       path.join(here, 'pet', 'renderer.js'),
       path.join(here, 'pet', 'skins'),
     ];
-    let stale = true;
-    try {
-      stale = Math.max(...sources.map(stampOf)) > statSync(helperBinary).mtimeMs;
-    } catch {
-      stale = true;
+    let stale = !existsSync(helperBinary);
+    if (!stale) {
+      try {
+        stale = Math.max(...sources.map(stampOf)) > statSync(helperBinary).mtimeMs;
+      } catch {
+        stale = false;
+      }
     }
-    if (!stale && existsSync(helperBinary)) {
+    if (!stale) {
       done();
       return;
     }
