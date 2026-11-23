@@ -11,7 +11,7 @@ import Cocoa
 import WebKit
 
 private let windowWidth: CGFloat = 320
-private let windowHeight: CGFloat = 250
+private let windowHeight: CGFloat = 360
 private let petBox: CGFloat = 96
 
 private let environment = ProcessInfo.processInfo.environment

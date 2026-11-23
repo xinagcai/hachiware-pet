@@ -222,6 +222,11 @@ let audio = null;
 let lastApprovalCount = 0;
 
 // The window is tiny, so anything that happened because of a click gets a toast.
+// The toast floats above the panel when it is open, and above the pet otherwise.
+const placeToast = () => {
+  toast.style.bottom = panel.hidden ? '96px' : `${panel.offsetHeight + 104}px`;
+};
+
 const flash = (text, ms = 4000) => {
   toastText = text;
   toastUntil = Date.now() + ms;
@@ -520,6 +525,7 @@ const render = () => {
   const showToast = Boolean(toastText) && Date.now() < toastUntil;
   toast.hidden = !showToast;
   if (showToast) toast.textContent = toastText;
+  placeToast();
 
   const running = snapshot.sessions.filter((session) => session.running).length;
   let summary = snapshot.sessions.length === 0
@@ -552,6 +558,7 @@ const setPanel = (open) => {
   panelOpen = open;
   panel.hidden = !open;
   if (open) render();
+  placeToast();
   reportHitbox();
 };
 

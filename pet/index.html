@@ -97,7 +97,7 @@
         right: 8px;
         bottom: 96px;
         width: 292px;
-        max-height: 150px;
+        max-height: 220px;
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -209,6 +209,7 @@
       /* One line that scrolls sideways: swipe with the pointer, or use the
          wheel/trackpad. The scrollbar itself stays hidden. */
       #skins {
+        flex: none;
         display: flex;
         flex-wrap: nowrap;
         gap: 4px;
@@ -301,8 +302,8 @@
         </div>
         <div id="panel-body">
           <div id="rows"></div>
-          <div id="skins" hidden></div>
         </div>
+        <div id="skins" hidden></div>
       </div>
       <button id="pet" type="button" aria-label="会话宠物">
         <span id="art"></span>

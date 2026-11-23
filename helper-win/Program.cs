@@ -77,7 +77,7 @@ internal static class Native
 internal sealed class PetForm : Form
 {
     private const int WindowWidth = 320;
-    private const int WindowHeight = 250;
+    private const int WindowHeight = 360;
 
     private readonly string statePath = Env("DSH_HACHIWARE_PET_STATE");
     private readonly string posPath = Env("DSH_HACHIWARE_PET_POS");
