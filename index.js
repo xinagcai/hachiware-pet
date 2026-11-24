@@ -247,12 +247,14 @@ export function apply(ctx) {
 
   /// Petdex publishes its whole catalog as one manifest; cache it for a day.
   let catalog = null;
+  let catalogBase = 'https://petdex.dev/';
   const loadCatalog = async () => {
     if (catalog) return catalog;
     try {
       const cached = JSON.parse(readFileSync(catalogFile, 'utf8'));
       if (cached && Array.isArray(cached.pets) && Date.now() - cached.at < 86400000) {
         catalog = cached.pets;
+        if (typeof cached.base === 'string' && cached.base) catalogBase = cached.base;
         return catalog;
       }
     } catch {
@@ -261,16 +263,46 @@ export function apply(ctx) {
     const response = await fetch(PETDEX_CATALOG);
     if (!response.ok) throw new Error(`catalog ${response.status}`);
     const body = await response.json();
+    if (typeof body?.assetBase === 'string' && /^https?:/i.test(body.assetBase)) catalogBase = body.assetBase;
     const rows = Array.isArray(body?.pets) ? body.pets : [];
     catalog = rows
       .filter((row) => Array.isArray(row) && row[0] && row[4])
       .map((row) => ({ slug: row[0], name: row[1] || row[0], sprite: row[4], version: row[7] || 1 }));
     try {
-      writeFileSync(catalogFile, JSON.stringify({ at: Date.now(), pets: catalog }));
+      writeFileSync(catalogFile, JSON.stringify({ at: Date.now(), base: catalogBase, pets: catalog }));
     } catch {
       /* a cache miss next time is harmless */
     }
     return catalog;
+  };
+
+  /// Downloads one petdex skin straight from the CDN. This is the primary path:
+  /// it needs no npm, no npx and no Node on PATH — which is exactly what a
+  /// Windows machine without a clickable panel can rely on.
+  const downloadSkin = async (slug) => {
+    const pets = await loadCatalog();
+    const pet = pets.find((row) => row.slug === slug) || pets.find((row) => row.name === slug);
+    if (!pet) throw new Error(`catalog has no "${slug}"`);
+    const url = /^https?:/i.test(pet.sprite) ? pet.sprite : new URL(pet.sprite, catalogBase).toString();
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`sprite ${response.status}`);
+    const sprite = Buffer.from(await response.arrayBuffer());
+    if (
+      sprite.length < 1024 ||
+      sprite.toString('ascii', 0, 4) !== 'RIFF' ||
+      sprite.toString('ascii', 8, 12) !== 'WEBP'
+    ) {
+      throw new Error('sprite is not a WebP');
+    }
+    const dir = path.join(skinsDir, pet.slug);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'spritesheet.webp'), sprite);
+    writeFileSync(
+      path.join(dir, 'pet.json'),
+      JSON.stringify({ id: pet.slug, displayName: pet.name, spritesheetPath: 'spritesheet.webp' }, null, 2),
+    );
+    log(`skin download: ${pet.slug} (${sprite.length} bytes)`);
+    return pet;
   };
 
   /// Reads the pixel size out of a WebP header: petdex sheets are 1536×1872
@@ -459,9 +491,17 @@ export function apply(ctx) {
     installing = true;
     skinError = '';
     writeState();
+    log(`skin install: ${slug}`);
+
+    const finish = (error, how) => {
+      installing = false;
+      skinError = error || '';
+      writeState();
+      log(`skin install: ${error || 'ready'}${how ? ` (${how})` : ''}`);
+    };
 
     const tryOnce = (attempt) => {
-      log(`skin install: ${slug} (attempt ${attempt}/${SKIN_ATTEMPTS})`);
+      log(`skin install: petdex attempt ${attempt}/${SKIN_ATTEMPTS}`);
       attemptPetdex(slug, (error) => {
         if (error && attempt < SKIN_ATTEMPTS && !disposed) {
           log(`skin install: ${error} - retrying`);
@@ -470,13 +510,21 @@ export function apply(ctx) {
           }, 2500 * attempt);
           return;
         }
-        installing = false;
-        skinError = error || '';
-        writeState();
-        log(`skin install: ${error || 'ready'}`);
+        finish(error, 'petdex');
       });
     };
-    tryOnce(1);
+
+    // A direct CDN download is the normal path; the petdex CLI is the fallback
+    // for anything the manifest cannot resolve.
+    downloadSkin(slug)
+      .then((pet) => {
+        writeCurrentSkin(pet.slug);
+        finish('', 'download');
+      })
+      .catch((error) => {
+        log(`skin download failed: ${error?.message || error} - falling back to petdex`);
+        tryOnce(1);
+      });
   };
 
   /// Switches to a skin already on disk. The helper re-reads current.json and
@@ -585,6 +633,8 @@ export function apply(ctx) {
   };
 
   const buildAndLaunch = (done) => {
+    // Tests drive the host without a screen; the window stays out of it.
+    if (process.env.DSH_HACHIWARE_PET_NO_WINDOW === '1') return;
     if (isWindows) {
       if (existsSync(helperBinary)) {
         done();
@@ -686,6 +736,7 @@ export function apply(ctx) {
   };
 
   const ensureRunning = () => {
+    if (process.env.DSH_HACHIWARE_PET_NO_WINDOW === '1') return;
     if (child || Date.now() - launchedAt < 5000) return;
     launch();
   };

@@ -89,6 +89,20 @@ Windows 版本的差异：
 
 装完会在屏幕右下角出现小八；首次运行点面板里的「＋ 新皮肤」下载一套精灵图皮肤。
 
+面板点不动时（例如 Windows 上丢了鼠标输入），可以绕过按钮，直接让宿主执行一次安装：
+
+```sh
+sh scripts/skin-command.sh            # macOS：装默认皮肤
+sh scripts/skin-command.sh --random   # macOS：随便装一套没装过的
+```
+
+```powershell
+powershell -File scripts\skin-command.ps1            # Windows
+powershell -File scripts\skin-command.ps1 -Random    # Windows
+```
+
+原理：宿主每 1.2 秒读一次数据目录里的 `command.json`（`{"action":"install-skin","slug":"..."}`）。皮肤从 petdex 的 CDN 直接下载，不依赖 npm / npx；下载失败才退回 petdex CLI。
+
 运行期文件都在 `~/Library/Application Support/dsh-hachiware-pet/`：
 
 - `state.json`：当前会话快照（可 `tail` 观察），含 `skin` 段
