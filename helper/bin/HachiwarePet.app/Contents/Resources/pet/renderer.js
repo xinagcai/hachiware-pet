@@ -12,6 +12,7 @@ const btnSkin = document.getElementById('btn-skin');
 const btnSearch = document.getElementById('btn-search');
 const searchBox = document.getElementById('skin-search');
 const searchInput = document.getElementById('skin-q');
+const searchClose = document.getElementById('skin-close');
 const searchResults = document.getElementById('skin-results');
 const toast = document.getElementById('toast');
 const skinsBox = document.getElementById('skins');
@@ -582,6 +583,7 @@ const searchHint = (text) => {
 const closeSearch = () => {
   searchBox.hidden = true;
   searchSignature = '';
+  if (typeof searchInput.blur === 'function') searchInput.blur();
 };
 
 const openSearch = () => {
@@ -640,6 +642,18 @@ btnSearch.addEventListener('click', (event) => {
   event.stopPropagation();
   if (searchBox.hidden) openSearch();
   else closeSearch();
+});
+
+searchClose.addEventListener('click', (event) => {
+  event.stopPropagation();
+  closeSearch();
+});
+
+// Escape closes the search from anywhere, not only while the input owns focus.
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || searchBox.hidden) return;
+  event.stopPropagation();
+  closeSearch();
 });
 
 searchInput.addEventListener('input', () => {
