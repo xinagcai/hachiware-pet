@@ -98,12 +98,15 @@ const detectRowFrames = (image) => {
 
 let spriteFrame = 0;
 let spriteRow = -1;
+let spriteMood = '';
+let spriteRate = 0;
 let spriteTimer = null;
 let spriteHeight = 0;
 
 const paintSprite = () => {
   const frame = spriteFrame % framesForRow(spriteRow);
-  art.style.backgroundPosition = `-${frame * SKIN_WIDTH}px -${spriteRow * spriteHeight}px`;
+  const top = Math.round(spriteRow * spriteHeight * 100) / 100;
+  art.style.backgroundPosition = `-${frame * SKIN_WIDTH}px -${top}px`;
 };
 
 const stopSprite = () => {
@@ -113,16 +116,42 @@ const stopSprite = () => {
   }
 };
 
-const startSprite = () => {
+// A calm mood must not cycle the whole row: these sheets alternate visibly
+// different poses, so a fast loop reads as a flicker. A hold plays one frame
+// and lets the CSS breathe carry the motion; a skin may name its own frame
+// (or null to play the row) with `holds: { tired: 3 }`.
+const DEFAULT_HOLDS = { tired: 0 };
+
+const skinHold = (state) => {
+  const holds = Object.assign({}, DEFAULT_HOLDS, skinOpt('holds', null) || {});
+  if (!(state in holds)) return null;
+  const frame = holds[state];
+  if (frame === null || frame === false) return null;
+  const index = Number(frame);
+  if (!Number.isInteger(index) || index < 0) return null;
+  return Math.min(index, framesForRow(skinRow(state)) - 1);
+};
+
+// Per-mood playback rate, so a slow mood can keep a slow loop instead of the
+// sheet's default cadence.
+const skinFpsFor = (state) => {
+  const rates = skinOpt('fpsByMood', null) || {};
+  const rate = Number(rates[state]);
+  return Number.isFinite(rate) && rate > 0 ? Math.max(1, Math.min(24, rate)) : skinFps();
+};
+
+const startSprite = (rate) => {
   if (spriteTimer !== null || !skin) return;
+  const fps = Number(rate) > 0 ? Number(rate) : spriteRate > 0 ? spriteRate : skinFps();
   spriteTimer = setInterval(() => {
     spriteFrame = (spriteFrame + 1) % framesForRow(spriteRow);
     paintSprite();
-  }, 1000 / skinFps());
+  }, 1000 / fps);
 };
 
 const paintArt = (state) => {
   if (!skin || skinBroken) {
+    stopSprite();
     art.className = '';
     art.innerHTML = petSVG(state);
     return;
@@ -132,16 +161,26 @@ const paintArt = (state) => {
   const cell = skinCell();
   spriteHeight = (SKIN_WIDTH * cell.height) / cell.width;
   const row = skinRow(state);
+  const rate = skinFpsFor(state);
   art.style.width = `${SKIN_WIDTH}px`;
   art.style.height = `${spriteHeight}px`;
   art.style.backgroundImage = `url("${skin.url}")`;
   art.style.backgroundSize = `${skinColumns() * SKIN_WIDTH}px ${skinRows() * spriteHeight}px`;
-  if (row !== spriteRow) {
+  if (row !== spriteRow || state !== spriteMood || rate !== spriteRate) {
     spriteRow = row;
+    spriteMood = state;
+    spriteRate = rate;
     spriteFrame = 0;
+    stopSprite();
+  }
+  const hold = skinHold(state);
+  if (hold !== null) {
+    spriteFrame = hold;
+    paintSprite();
+    return;
   }
   paintSprite();
-  startSprite();
+  startSprite(rate);
 };
 
 const setSkinUi = () => {
@@ -210,7 +249,7 @@ window.__petSkinClear = clearSkin;
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) stopSprite();
-  else if (skin) startSprite();
+  else if (skin) startSprite(spriteRate);
 });
 
 let snapshot = { sessions: [], approvals: [] };

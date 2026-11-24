@@ -388,6 +388,10 @@ export function apply(ctx) {
       cell: override.cell || grid.cell,
       moods: override.moods || { idle: 0, focused: 7, strained: 1, tired: 6, alert: 3 },
       frames: Array.isArray(override.frames) ? override.frames : null,
+      // Per-mood playback overrides a skin may declare: `holds` pins a calm
+      // mood to one frame (no loop), `fpsByMood` slows a specific row.
+      holds: override.holds || null,
+      fpsByMood: override.fpsByMood || null,
       installedAt: new Date().toISOString(),
     };
     mkdirSync(skinsDir, { recursive: true });
