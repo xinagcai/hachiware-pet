@@ -402,6 +402,10 @@ final class PetApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         case "new-skin":
             logLine("new skin requested")
             writeCommand(["action": "new-skin"])
+        case "search":
+            let query = body["query"] as? String ?? ""
+            logLine("search: \(query)")
+            writeCommand(["action": "search-skins", "query": query])
         case "error":
             let message = body["message"] as? String ?? "?"
             let source = body["source"] as? String ?? ""
@@ -480,7 +484,8 @@ final class PetApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
           install: function (slug) { window.webkit.messageHandlers.pet.postMessage({ type: 'install', slug: slug || '' }); },
           switchSkin: function (slug) { window.webkit.messageHandlers.pet.postMessage({ type: 'switch', slug: slug || '' }); },
           deleteSkin: function (slug) { window.webkit.messageHandlers.pet.postMessage({ type: 'delete', slug: slug || '' }); },
-          newSkin: function () { window.webkit.messageHandlers.pet.postMessage({ type: 'new-skin' }); }
+          newSkin: function () { window.webkit.messageHandlers.pet.postMessage({ type: 'new-skin' }); },
+          search: function (query) { window.webkit.messageHandlers.pet.postMessage({ type: 'search', query: String(query || '') }); }
         };
         window.addEventListener('error', function (event) {
           try {

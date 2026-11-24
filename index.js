@@ -138,6 +138,8 @@ export function apply(ctx) {
   let lastWritten = '';
   let installing = false;
   let skinError = '';
+  /// The last search the panel asked for, echoed back in every state push.
+  let skinSearch = { query: '', items: [], busy: false, error: '' };
 
   const snapshot = () => {
     const sessions = [];
@@ -192,6 +194,7 @@ export function apply(ctx) {
         installing,
         error: skinError,
         options: listSkins(),
+        search: skinSearch,
       },
     };
   };
@@ -606,6 +609,34 @@ export function apply(ctx) {
     installSkin(pick.slug);
   };
 
+  /// Typing in the panel sends a search here; the catalog is one cached manifest.
+  const searchSkins = async (query) => {
+    const text = String(query || '').trim();
+    skinSearch = { query: text, items: skinSearch.items, busy: true, error: '' };
+    writeState();
+    try {
+      const pets = await loadCatalog();
+      const needle = text.toLowerCase();
+      const hits = (needle
+        ? pets.filter((pet) => pet.slug.toLowerCase().includes(needle) || pet.name.toLowerCase().includes(needle))
+        : pets
+      )
+        .slice(0, 24)
+        .map((pet) => ({
+          slug: pet.slug,
+          name: pet.name,
+          version: pet.version,
+          installed: existsSync(path.join(skinsDir, pet.slug, 'spritesheet.webp')),
+        }));
+      skinSearch = { query: text, items: hits, busy: false, error: '' };
+      log(`skin search: "${text}" -> ${hits.length}`);
+    } catch (error) {
+      skinSearch = { query: text, items: [], busy: false, error: String(error?.message || error) };
+      log(`skin search failed: ${skinSearch.error}`);
+    }
+    writeState();
+  };
+
   /// The page cannot run a downloader; it drops a request file and this polls it.
   const pollCommand = () => {
     let command;
@@ -615,7 +646,7 @@ export function apply(ctx) {
       return;
     }
     if (!command || typeof command.action !== 'string') return;
-    log(`command: ${command.action}${command.slug ? ` ${command.slug}` : ''}`);
+    log(`command: ${command.action}${command.slug ? ` ${command.slug}` : command.query ? ` "${command.query}"` : ''}`);
     try {
       unlinkSync(commandFile);
     } catch {
@@ -631,6 +662,10 @@ export function apply(ctx) {
     }
     if (command.action === 'new-skin') {
       installRandomSkin();
+      return;
+    }
+    if (command.action === 'search-skins') {
+      searchSkins(command.query || '');
       return;
     }
     if (command.action === 'install-skin') installSkin(command.slug || DEFAULT_SKIN);

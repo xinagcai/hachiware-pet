@@ -39,6 +39,7 @@ The package ships **no character art**. The first run draws a simple pet; pressi
 
 - Frames per row are measured from the sheet's alpha at load time, so uneven sheets (most of them) play without blank frames
 - The grid is derived from the image size, so 8×9 and 8×11 sheets both render correctly
+- **Search skins** opens a field that matches against the cached petdex catalog by slug or display name; a result marked *download* fetches the sheet straight from the CDN and switches to it, one marked *installed* switches immediately
 - `×` asks for a second click, then deletes that skin; deleting the current one switches to the next, deleting all of them falls back to the line drawing
 
 ## Verify a published tarball

@@ -129,6 +129,15 @@ powershell -File scripts\skin-command.ps1 -Random    # Windows
 - 点某个圆片 → 页面写 `{"action":"switch-skin","slug":"..."}`，宿主改 `current.json`，helper 重新注入，**离线也能切**；
 - 高亮的那片 = 当前皮肤。
 
+### 搜皮肤（按名字）
+
+「＋ 新皮肤」右边是「搜皮肤」：点开出现输入框，键入名字（slug 或显示名，中英文都行），宿主在 petdex 清单里做子串匹配，最多回 24 条：
+
+- 右侧标「下载」= 本地没有，点了就从 CDN 直下 WebP 并切过去；标「已装」= 本地已有，点了直接切换；
+- 清单第一次搜索时拉取，缓存 24 小时（数据目录的 `petdex-catalog.json`），之后离线也能搜；
+- 搜索词随 1.2 秒一次的状态推送回传，输入框不会被刷新打断；
+- Windows 上键盘由原生壳转发（点击穿透的 WebView2 收不到键盘事件），打字、退格、回车可用。
+
 本地开发目录里带了 `pet/skins/hachiware-2`，首次运行会自动 seed 到运行时目录。
 
 ## 换皮（手动）

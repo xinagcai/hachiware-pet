@@ -206,6 +206,55 @@
         box-shadow: 0 8px 20px rgb(0 0 0 / 28%);
       }
       #toast[hidden] { display: none; }
+      #skin-search {
+        flex: none;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 6px 6px 2px;
+        margin-top: 4px;
+        border-top: 1px solid rgb(0 0 0 / 6%);
+      }
+      #skin-search[hidden] { display: none; }
+      #skin-q {
+        width: 100%;
+        padding: 3px 7px;
+        border: 1px solid rgb(0 0 0 / 12%);
+        border-radius: 7px;
+        background: #fff;
+        color: #111827;
+        font: inherit;
+        font-size: 11px;
+        outline: none;
+      }
+      #skin-q:focus { border-color: rgb(59 130 246 / 55%); box-shadow: 0 0 0 2px rgb(59 130 246 / 12%); }
+      #skin-results {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        max-height: 92px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      #skin-results .hint { padding: 3px 4px; color: #9ca3af; font-size: 10px; }
+      #skin-results .hit {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 4px;
+        border: 0;
+        border-radius: 5px;
+        background: none;
+        color: #374151;
+        font: inherit;
+        font-size: 11px;
+        text-align: left;
+        cursor: pointer;
+      }
+      #skin-results .hit:hover { background: rgb(0 0 0 / 5%); }
+      #skin-results .hit-name { flex: 1 1 auto; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      #skin-results .hit-tag { flex: none; color: #6b7280; font-size: 10px; }
+      #skin-results .hit.installed .hit-tag { color: #059669; }
       /* One line that scrolls sideways: swipe with the pointer, or use the
          wheel/trackpad. The scrollbar itself stays hidden. */
       #skins {
@@ -299,9 +348,14 @@
           <button class="tool" id="btn-focus" type="button">回到 Harness</button>
           <button class="tool" id="btn-park" type="button">停靠</button>
           <button class="tool" id="btn-skin" type="button">＋ 新皮肤</button>
+          <button class="tool" id="btn-search" type="button">搜皮肤</button>
         </div>
         <div id="panel-body">
           <div id="rows"></div>
+        </div>
+        <div id="skin-search" hidden>
+          <input id="skin-q" type="text" placeholder="搜索 petdex 皮肤，如 hachiware" autocomplete="off" spellcheck="false" />
+          <div id="skin-results"></div>
         </div>
         <div id="skins" hidden></div>
       </div>

@@ -9,6 +9,10 @@ const panel = document.getElementById('panel');
 const rows = document.getElementById('rows');
 const summaryText = document.getElementById('summary-text');
 const btnSkin = document.getElementById('btn-skin');
+const btnSearch = document.getElementById('btn-search');
+const searchBox = document.getElementById('skin-search');
+const searchInput = document.getElementById('skin-q');
+const searchResults = document.getElementById('skin-results');
 const toast = document.getElementById('toast');
 const skinsBox = document.getElementById('skins');
 // Set when the button is pressed: the host needs a beat to flip state.installing.
@@ -546,6 +550,112 @@ skinsBox.addEventListener('wheel', (event) => {
   event.preventDefault();
 }, { passive: false });
 
+/* The Windows shell cannot deliver keyboard events to a click-through
+   WebView2, so it replays typed characters here instead. */
+window.__petKey = (kind, text) => {
+  const field = document.activeElement;
+  if (!field || typeof field.value !== 'string') return;
+  if (kind === 'char') {
+    field.value += text;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  } else if (kind === 'back') {
+    field.value = field.value.slice(0, -1);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    field.blur();
+  }
+};
+
+/* Searching petdex by name: the page only asks, the host owns the catalog and
+   the download. Results come back in the state push, so this stays dumb. */
+let searchSignature = '';
+let searchDebounce = null;
+
+const searchHint = (text) => {
+  const line = document.createElement('div');
+  line.className = 'hint';
+  line.textContent = text;
+  searchResults.appendChild(line);
+};
+
+const closeSearch = () => {
+  searchBox.hidden = true;
+  searchSignature = '';
+};
+
+const openSearch = () => {
+  searchBox.hidden = false;
+  renderSearch();
+  searchInput.focus();
+};
+
+const renderSearch = () => {
+  const search = (snapshot.skin || {}).search || {};
+  const items = Array.isArray(search.items) ? search.items : [];
+  const signature = `${search.query || ''}|${search.busy ? 1 : 0}|${search.error || ''}|${items
+    .map((item) => `${item.slug}:${item.installed ? 1 : 0}`)
+    .join(',')}`;
+  if (signature === searchSignature) return;
+  searchSignature = signature;
+  if (document.activeElement !== searchInput && typeof search.query === 'string') {
+    searchInput.value = search.query;
+  }
+  searchResults.textContent = '';
+  if (search.error) return searchHint(`搜索失败：${search.error}`);
+  if (search.busy) return searchHint('搜索中…');
+  if (items.length === 0) {
+    return searchHint(search.query ? '没有匹配的皮肤' : '输入名字，搜索 petdex 皮肤库');
+  }
+  for (const item of items) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `hit${item.installed ? ' installed' : ''}`;
+    row.title = item.installed ? `切换到 ${item.name}` : `下载并切换到 ${item.name}`;
+
+    const name = document.createElement('span');
+    name.className = 'hit-name';
+    name.textContent = item.name;
+
+    const tag = document.createElement('span');
+    tag.className = 'hit-tag';
+    tag.textContent = item.installed ? '已装' : item.version >= 2 ? '下载' : '下载·旧版';
+
+    row.append(name, tag);
+    row.addEventListener('click', () => {
+      if (item.installed) {
+        if (api.switchSkin) api.switchSkin(item.slug);
+        flash(`切换到 ${item.name}…`, 1500);
+      } else {
+        if (api.install) api.install(item.slug);
+        flash(`下载 ${item.name}…`, 2500);
+      }
+      closeSearch();
+    });
+    searchResults.appendChild(row);
+  }
+};
+
+btnSearch.addEventListener('click', (event) => {
+  event.stopPropagation();
+  if (searchBox.hidden) openSearch();
+  else closeSearch();
+});
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  const query = searchInput.value;
+  searchDebounce = setTimeout(() => {
+    if (api.search) api.search(query);
+    else searchInput.title = '当前窗口没有 search 接口';
+  }, 320);
+});
+
+searchInput.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  event.stopPropagation();
+  closeSearch();
+});
+
 const render = () => {
   const current = mood();
   pet.className = current + (drag ? ' dragging' : '');
@@ -561,6 +671,7 @@ const render = () => {
 
   setSkinUi();
   renderSkins();
+  if (!searchBox.hidden) renderSearch();
   const showToast = Boolean(toastText) && Date.now() < toastUntil;
   toast.hidden = !showToast;
   if (showToast) toast.textContent = toastText;
@@ -594,6 +705,7 @@ const render = () => {
 };
 
 const setPanel = (open) => {
+  if (!open) closeSearch();
   panelOpen = open;
   panel.hidden = !open;
   if (open) render();

@@ -116,6 +116,7 @@ internal sealed class PetForm : Form
         TransparencyKey = Color.Magenta;
         DoubleBuffered = true;
         AllowTransparency = true;
+        KeyPreview = true;
         ApplySavedPosition();
     }
 
@@ -209,6 +210,10 @@ internal sealed class PetForm : Form
                 case "new-skin":
                     WriteCommand("new-skin", null);
                     Log("new skin requested");
+                    break;
+                case "search":
+                    WriteCommand("search-skins", null, Str(root, "query"));
+                    Log("search: " + Str(root, "query"));
                     break;
                 case "hitbox":
                     ReadHitbox(root);
@@ -339,6 +344,31 @@ internal sealed class PetForm : Form
         _ = web.CoreWebView2.ExecuteScriptAsync(script);
     }
 
+    /// Keyboard cannot reach a click-through WebView2, so the panel's search
+    /// box gets typed characters replayed into the focused input.
+    private void ForwardKey(string kind, string text)
+    {
+        if (!ready) return;
+        var script = "window.__petKey && window.__petKey(" +
+                     JsonSerializer.Serialize(kind) + "," + JsonSerializer.Serialize(text) + ")";
+        _ = web.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    protected override void OnKeyPress(KeyPressEventArgs e)
+    {
+        base.OnKeyPress(e);
+        if (char.IsControl(e.KeyChar)) return;
+        ForwardKey("char", e.KeyChar.ToString());
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.KeyCode == Keys.Back) ForwardKey("back", "");
+        else if (e.KeyCode == Keys.Enter) ForwardKey("enter", "");
+        else if (e.KeyCode == Keys.Escape) ForwardKey("esc", "");
+    }
+
     private static string Num(double value) =>
         value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -464,7 +494,7 @@ internal sealed class PetForm : Form
         BeginInvoke(new Action(Close));
     }
 
-    private void WriteCommand(string action, string? slug)
+    private void WriteCommand(string action, string? slug, string? query = null)
     {
         try
         {
@@ -473,9 +503,10 @@ internal sealed class PetForm : Form
                 Log("command path missing");
                 return;
             }
-            var json = string.IsNullOrEmpty(slug)
-                ? "{\"action\":\"" + action + "\"}"
-                : "{\"action\":\"" + action + "\",\"slug\":\"" + slug + "\"}";
+            var body = new Dictionary<string, string> { ["action"] = action };
+            if (!string.IsNullOrEmpty(slug)) body["slug"] = slug!;
+            if (query != null) body["query"] = query;
+            var json = JsonSerializer.Serialize(body);
             var temporary = commandPath + ".tmp";
             File.WriteAllText(temporary, json, Encoding.UTF8);
             File.Move(temporary, commandPath, true);
@@ -561,7 +592,8 @@ internal sealed class PetForm : Form
     install: function (slug) { post({ type: 'install', slug: slug || '' }); },
     switchSkin: function (slug) { post({ type: 'switch', slug: slug || '' }); },
     deleteSkin: function (slug) { post({ type: 'delete', slug: slug || '' }); },
-    newSkin: function () { post({ type: 'new-skin' }); }
+    newSkin: function () { post({ type: 'new-skin' }); },
+    search: function (query) { post({ type: 'search', query: String(query || '') }); }
   };
   window.addEventListener('error', function (event) {
     try { post({ type: 'debug', message: String(event.message) }); } catch (ignored) {}

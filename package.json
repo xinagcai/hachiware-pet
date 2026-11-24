@@ -1,6 +1,6 @@
 {
   "name": "hachiware-pet",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "type": "module",
   "description": "Desktop pet for DeepSeek Harness: an always-on-top window that shows session activity, run time and pending approvals. macOS + Windows.",
   "exports": {
