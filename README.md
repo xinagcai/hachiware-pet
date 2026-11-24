@@ -75,6 +75,9 @@ Windows 版本的差异：
 - **构建**：发布包已带编译好的 `helper/bin/win/HachiwarePet.exe`（1.2 MB，框架依赖），普通用户无需 SDK。改 C# 后重新出包：在装了 .NET 8 SDK 的机器上 `powershell -NoProfile -ExecutionPolicy Bypass -File helper-win\build.ps1`；加 `-SelfContained` 可编出免运行时的单文件（约 70 MB）。宿主发现 exe 缺失时也会自动跑这个脚本。
 - **运行时**：框架依赖版需要 .NET 8 **Desktop** Runtime（`winget install Microsoft.DotNet.DesktopRuntime.8`，缺失时 Windows 会弹下载提示）；WebView2 运行时 Win11 自带，Win10 一般随 Edge 已有。
 - **皮肤**：Windows 侧把 `current.json` + 精灵图读成 data URL 注入，**不传帧数**——`data:` 图片在 Chromium 里不会污染 canvas，页面自己逐格采样量帧数；macOS 因为 `file://` 画布被污染，改由 Swift 用 CGImage 量。
+- **鼠标输入**：WebView2 的渲染子窗口必须一直保持 `WS_EX_TRANSPARENT`（透明合成依赖它），所以 Windows 上页面收不到真实鼠标事件。
+  外层 Form 自己命中 pet/panel 矩形，再把 `MouseDown/Move/Up/Wheel/DoubleClick` 用 `ExecuteScriptAsync` 调 `window.__petInput(...)` 转成合成事件投给页面；
+  拖动时 Form 抓鼠标捕获，窗口移动按 CSS→物理像素的 DPI 比例换算（0.2.8 起，修的是 Win11 24H2 上点不开面板）。
 - **回前台**：直接对宿主传来的应用 pid 与父进程 pid 尝试 `SetForegroundWindow`，失败再按进程名 `DeepSeek Harness` 找主窗口。
 
 ## 安装

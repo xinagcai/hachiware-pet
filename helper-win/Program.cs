@@ -97,6 +97,7 @@ internal sealed class PetForm : Form
     private string lastState = "";
     private string injectedSkin = "";
     private bool clickThrough;
+    private bool mouseDown;
     private bool ready;
     private bool pageReady;
     private Rectangle petRect;
@@ -152,6 +153,9 @@ internal sealed class PetForm : Form
         Directory.CreateDirectory(userData);
         var environment = await CoreWebView2Environment.CreateAsync(null, userData);
         await web.EnsureCoreWebView2Async(environment);
+        // Keep the WebView surface click-through for its whole life: it must
+        // never take the mouse, the Form forwards input into the page instead.
+        Native.SetTransparent(web.Handle, true);
         web.CoreWebView2.Settings.AreDevToolsEnabled = false;
         web.CoreWebView2.Settings.IsStatusBarEnabled = false;
         web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
@@ -290,7 +294,7 @@ internal sealed class PetForm : Form
 
     private void UpdateClickThrough()
     {
-        if (!ready || !IsHandleCreated) return;
+        if (!ready || !IsHandleCreated || mouseDown) return;
         Native.GetWindowRect(Handle, out var windowRect);
         Native.GetCursorPos(out var cursor);
         var scale = DeviceDpi / 96.0;
@@ -298,6 +302,9 @@ internal sealed class PetForm : Form
         var y = (cursor.Y - windowRect.Top) / scale;
         var over = petRect.Contains((int)x, (int)y) ||
                    (!panelRect.IsEmpty && panelRect.Contains((int)x, (int)y));
+        // The page cannot set the cursor while it is click-through, so the shell
+        // mirrors it: a hand over the pet or the open panel, an arrow elsewhere.
+        if (Cursor != (over ? Cursors.Hand : Cursors.Default)) Cursor = over ? Cursors.Hand : Cursors.Default;
         SetClickThrough(!over);
     }
 
@@ -305,10 +312,76 @@ internal sealed class PetForm : Form
     {
         if (clickThrough == inactive) return;
         clickThrough = inactive;
-        // The WebView2 surface is a child HWND, so mark both: the layered parent
-        // for the empty stage, the child for everything inside the window.
+        // Only the layered parent is toggled. The WebView2 render widget keeps
+        // WS_EX_TRANSPARENT for good: that flag is what makes the transparent
+        // stage composite, and clearing it blanks the pet (issue #1). So the
+        // WebView never receives the mouse on Windows; the Form does, and
+        // forwards it into the page as synthetic events (ForwardMouse).
         Native.SetTransparent(Handle, inactive);
-        if (web != null && web.IsHandleCreated) Native.SetTransparent(web.Handle, inactive);
+        if (web != null && web.IsHandleCreated) Native.SetTransparent(web.Handle, true);
+    }
+
+    private double UiScale => DeviceDpi / 96.0;
+
+    // The page is click-through in the WebView, so every mouse message the Form
+    // gets is replayed into the page. The page's handlers only need client and
+    // screen coordinates, both expressed in CSS pixels like on macOS.
+    private void ForwardMouse(string kind, MouseEventArgs e, int deltaY = 0)
+    {
+        if (!ready || !pageReady || web?.CoreWebView2 == null) return;
+        var scale = UiScale;
+        var cursor = Cursor.Position;
+        var buttons = (e.Button & MouseButtons.Left) != 0 ? 1 : 0;
+        var script = "window.__petInput && window.__petInput('" + kind + "'," +
+                     Num(e.X / scale) + "," + Num(e.Y / scale) + "," +
+                     Num(cursor.X / scale) + "," + Num(cursor.Y / scale) + "," +
+                     buttons + "," + deltaY + ")";
+        _ = web.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    private static string Num(double value) =>
+        value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (e.Button == MouseButtons.Left)
+        {
+            // Capture so a fast drag keeps feeding the page even when the
+            // pointer leaves the small window rectangle.
+            mouseDown = true;
+            Capture = true;
+        }
+        ForwardMouse("down", e);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        ForwardMouse("move", e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (mouseDown)
+        {
+            mouseDown = false;
+            Capture = false;
+        }
+        ForwardMouse("up", e);
+    }
+
+    protected override void OnMouseDoubleClick(MouseEventArgs e)
+    {
+        base.OnMouseDoubleClick(e);
+        ForwardMouse("dbl", e);
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        ForwardMouse("wheel", e, e.Delta);
     }
 
     private void PushState()

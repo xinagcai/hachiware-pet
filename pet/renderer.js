@@ -573,12 +573,100 @@ function reportHitbox() {
 
 /* ------------------------------------------------------------------ input */
 
+/* Synthetic input bridge (Windows). The WebView2 surface stays click-through
+   there — that is what makes the transparent stage composite — so the WinForms
+   shell replays its mouse messages as synthetic events. macOS sends real input
+   and never calls this. */
+(() => {
+  let pressed = null;
+
+  const at = (x, y) => document.elementFromPoint(x, y) || document.body;
+
+  const pointer = (type, x, y, sx, sy, buttons) =>
+    new PointerEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      screenX: sx,
+      screenY: sy,
+      pointerId: 1,
+      pointerType: 'mouse',
+      isPrimary: true,
+      button: 0,
+      buttons,
+    });
+
+  const mouse = (type, x, y, sx, sy, buttons) =>
+    new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      clientX: x,
+      clientY: y,
+      screenX: sx,
+      screenY: sy,
+      button: 0,
+      buttons,
+      view: window,
+    });
+
+  window.__petInput = (kind, x, y, sx, sy, buttons, deltaY) => {
+    const hit = at(x, y);
+    if (kind === 'down') {
+      pressed = hit;
+      hit.dispatchEvent(pointer('pointerdown', x, y, sx, sy, buttons));
+      hit.dispatchEvent(mouse('mousedown', x, y, sx, sy, buttons));
+      return;
+    }
+    if (kind === 'move') {
+      const target = pressed || hit;
+      target.dispatchEvent(pointer('pointermove', x, y, sx, sy, buttons));
+      target.dispatchEvent(mouse('mousemove', x, y, sx, sy, buttons));
+      return;
+    }
+    if (kind === 'up') {
+      const target = pressed || hit;
+      pressed = null;
+      target.dispatchEvent(pointer('pointerup', x, y, sx, sy, 0));
+      target.dispatchEvent(mouse('mouseup', x, y, sx, sy, 0));
+      // The browser synthesises a click from real input only, so replay it for
+      // the toolbar buttons and the session rows.
+      hit.dispatchEvent(mouse('click', x, y, sx, sy, 0));
+      return;
+    }
+    if (kind === 'dbl') {
+      hit.dispatchEvent(mouse('dblclick', x, y, sx, sy, 0));
+      return;
+    }
+    if (kind === 'wheel') {
+      hit.dispatchEvent(
+        new WheelEvent('wheel', {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clientX: x,
+          clientY: y,
+          deltaY,
+          deltaMode: 0,
+        }),
+      );
+    }
+  };
+})();
+
 let drag = null;
 
 pet.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   ensureAudio();
-  pet.setPointerCapture(event.pointerId);
+  // Synthetic events (Windows) have no active pointer to capture, which throws.
+  try {
+    pet.setPointerCapture(event.pointerId);
+  } catch {
+    /* not a real pointer */
+  }
   drag = {
     pointerId: event.pointerId,
     lastX: event.screenX,
