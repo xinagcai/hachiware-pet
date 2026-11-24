@@ -121,10 +121,11 @@ const stopSprite = () => {
 };
 
 // A calm mood must not cycle the whole row: these sheets alternate visibly
-// different poses, so a fast loop reads as a flicker. A hold plays one frame
-// and lets the CSS breathe carry the motion; a skin may name its own frame
-// (or null to play the row) with `holds: { tired: 3 }`.
-const DEFAULT_HOLDS = { tired: 0 };
+// different poses, so a fast loop reads as a flicker. Two knobs calm that down:
+// `holds` plays one frame (null plays the row) and `fpsByMood` slows the loop.
+// The sleeping row defaults to a slow sway rather than a freeze.
+const DEFAULT_HOLDS = {};
+const DEFAULT_FPS = { tired: 2 };
 
 const skinHold = (state) => {
   const holds = Object.assign({}, DEFAULT_HOLDS, skinOpt('holds', null) || {});
@@ -139,7 +140,7 @@ const skinHold = (state) => {
 // Per-mood playback rate, so a slow mood can keep a slow loop instead of the
 // sheet's default cadence.
 const skinFpsFor = (state) => {
-  const rates = skinOpt('fpsByMood', null) || {};
+  const rates = Object.assign({}, DEFAULT_FPS, skinOpt('fpsByMood', null) || {});
   const rate = Number(rates[state]);
   return Number.isFinite(rate) && rate > 0 ? Math.max(1, Math.min(24, rate)) : skinFps();
 };

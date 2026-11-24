@@ -152,6 +152,8 @@ powershell -File scripts\skin-command.ps1 -Random    # Windows
 
 行数不齐也没关系：帧数由 helper 实测（`skin frames: ...` 日志），`skin.json` 里写死会优先生效。
 
+睡觉那一行默认放慢到 2 帧/秒（`fpsByMood: { "tired": 2 }`）——不少图集的睡姿是"两个姿势交替"，8 帧/秒看着像闪。慢放还嫌晃的话可以定格：`"holds": { "tired": 0 }`（`null` = 照常播放）。
+
 ## 验证发布包
 
 不想相信"装得上"，可以直接跑一遍。脚本从 npm 下载真实的 tarball，在临时目录里逐层验，不写你机器上任何位置：
