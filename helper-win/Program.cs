@@ -58,6 +58,18 @@ internal static class Native
     public static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
 
     [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int width, int height);
+
+    [DllImport("gdi32.dll")]
+    public static extern bool DeleteObject(IntPtr handle);
+
+    [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
@@ -71,6 +83,88 @@ internal static class Native
         var style = GetWindowLong(hWnd, GwlExStyle);
         style = transparent ? style | WsExTransparent : style & ~WsExTransparent;
         SetWindowLong(hWnd, GwlExStyle, style);
+    }
+}
+
+/// <summary>
+/// A second, practically invisible top-level window that owns the mouse.
+///
+/// The visible stage is a colour-keyed layered window, and Windows treats those as
+/// transparent to hit testing — no WM_MOUSE* ever reaches it, so nothing on the pet
+/// could be clicked. This window sits above it with a 1/255 alpha and a region
+/// shaped to the pet and the open panel: it receives the real mouse, hands every
+/// gesture to the page, and keeps the click from falling through to the desktop
+/// behind the pet.
+/// </summary>
+internal sealed class ClickCatcher : Form
+{
+    internal Action<string, int, int, int, int>? Forward;
+
+    public ClickCatcher()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        TopMost = true;
+        StartPosition = FormStartPosition.Manual;
+        BackColor = Color.Black;
+        Opacity = 1d / 255d;
+    }
+
+    protected override bool ShowWithoutActivation => true;
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var style = base.CreateParams;
+            style.ExStyle |= 0x08000000; // WS_EX_NOACTIVATE: clicking must not steal focus
+            return style;
+        }
+    }
+
+    /// <summary>Restricts the window to the pet (and the panel, when it is open).</summary>
+    internal void Shape(Rectangle pet, Rectangle panel)
+    {
+        if (pet.IsEmpty) return;
+        var region = panel.IsEmpty ? pet : Rectangle.Union(pet, panel);
+        region.Inflate(2, 2);
+        var handle = Native.CreateRoundRectRgn(region.Left, region.Top, region.Right + 1, region.Bottom + 1, 12, 12);
+        // SetWindowRgn owns the region once it succeeds; nothing else may free it.
+        Native.SetWindowRgn(Handle, handle, true);
+    }
+
+    private static int Buttons(MouseEventArgs e) => (e.Button & MouseButtons.Left) != 0 ? 1 : 0;
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        Capture = true;
+        Forward?.Invoke("down", e.X, e.Y, Buttons(e), 0);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        Forward?.Invoke("move", e.X, e.Y, Buttons(e), 0);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        Capture = false;
+        Forward?.Invoke("up", e.X, e.Y, 0, 0);
+    }
+
+    protected override void OnMouseDoubleClick(MouseEventArgs e)
+    {
+        base.OnMouseDoubleClick(e);
+        Forward?.Invoke("dbl", e.X, e.Y, 0, 0);
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        Forward?.Invoke("wheel", e.X, e.Y, 0, e.Delta);
     }
 }
 
@@ -91,13 +185,25 @@ internal sealed class PetForm : Form
     private WebView2 web = null!;
     private readonly System.Windows.Forms.Timer stateTimer = new() { Interval = 450 };
     private readonly System.Windows.Forms.Timer hoverTimer = new() { Interval = 120 };
+    // The transparent stage is transparent to hit testing on Windows (a colour-keyed
+    // layered window never receives WM_MOUSE*), so the shell samples the real mouse
+    // and replays it into the page. 30 ms is well under a frame of human perception.
+    private readonly System.Windows.Forms.Timer inputTimer = new() { Interval = 30 };
     private readonly System.Windows.Forms.Timer parentTimer = new() { Interval = 1000 };
     private readonly System.Windows.Forms.Timer saveTimer = new() { Interval = 400 };
 
     private string lastState = "";
     private string injectedSkin = "";
     private bool clickThrough;
-    private bool mouseDown;
+    private bool pollDragging;
+    private ClickCatcher? catcher;
+    private bool directInput;
+    private bool pollMoved;
+    private Point pollDownAt;
+    private DateTime pollDownWhen;
+    private DateTime pollLastUpWhen;
+    private Point pollLastUpAt;
+    private const int VkLButton = 0x01;
     private bool ready;
     private bool pageReady;
     private Rectangle petRect;
@@ -130,13 +236,18 @@ internal sealed class PetForm : Form
         {
             await CreateWebViewAsync();
             ready = true;
+            catcher = new ClickCatcher { Forward = ForwardAt };
+            catcher.Show();
+            SyncCatcher();
             stateTimer.Tick += (_, _) => PushState();
             hoverTimer.Tick += (_, _) => UpdateClickThrough();
             parentTimer.Tick += (_, _) => CheckParent();
             saveTimer.Tick += (_, _) => { saveTimer.Stop(); SavePosition(); };
-            Move += (_, _) => { saveTimer.Stop(); saveTimer.Start(); };
+            Move += (_, _) => { saveTimer.Stop(); saveTimer.Start(); SyncCatcher(); };
             stateTimer.Start();
             hoverTimer.Start();
+            inputTimer.Tick += (_, _) => PollInput();
+            inputTimer.Start();
             parentTimer.Start();
         }
         catch (Exception error)
@@ -283,6 +394,7 @@ internal sealed class PetForm : Form
     {
         petRect = RectOf(root, "pet");
         panelRect = RectOf(root, "panel");
+        SyncCatcher();
     }
 
     private static Rectangle RectOf(JsonElement root, string name)
@@ -299,7 +411,7 @@ internal sealed class PetForm : Form
 
     private void UpdateClickThrough()
     {
-        if (!ready || !IsHandleCreated || mouseDown) return;
+        if (!ready || !IsHandleCreated || pollDragging) return;
         Native.GetWindowRect(Handle, out var windowRect);
         Native.GetCursorPos(out var cursor);
         var scale = DeviceDpi / 96.0;
@@ -328,19 +440,119 @@ internal sealed class PetForm : Form
 
     private double UiScale => DeviceDpi / 96.0;
 
-    // The page is click-through in the WebView, so every mouse message the Form
-    // gets is replayed into the page. The page's handlers only need client and
-    // screen coordinates, both expressed in CSS pixels like on macOS.
-    private void ForwardMouse(string kind, MouseEventArgs e, int deltaY = 0)
+    /// <summary>True when the cursor is over the pet or the open panel (CSS pixels).</summary>
+    private bool IsHit(double x, double y) =>
+        petRect.Contains((int)x, (int)y) || (!panelRect.IsEmpty && panelRect.Contains((int)x, (int)y));
+
+    private static double Distance(Point a, Point b)
     {
-        if (!ready || !pageReady || web?.CoreWebView2 == null) return;
+        var dx = a.X - b.X;
+        var dy = a.Y - b.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    /// <summary>
+    /// A colour-keyed layered window is invisible to hit testing on Windows, so no
+    /// WM_MOUSE* ever arrives and the Form cannot forward what it never receives.
+    /// The shell therefore samples the real cursor and button state and replays the
+    /// gestures into the page through <c>window.__petInput</c>, which dispatches
+    /// pointer/mouse/click events at the point under the cursor.
+    /// </summary>
+    private void PollInput()
+    {
+        if (!ready || !pageReady || directInput || web?.CoreWebView2 is null) return;
+        Native.GetWindowRect(Handle, out var windowRect);
+        Native.GetCursorPos(out var cursor);
+        var point = new Point(cursor.X, cursor.Y);
         var scale = UiScale;
-        var cursor = Cursor.Position;
-        var buttons = (e.Button & MouseButtons.Left) != 0 ? 1 : 0;
+        var x = (cursor.X - windowRect.Left) / scale;
+        var y = (cursor.Y - windowRect.Top) / scale;
+        var down = (Native.GetAsyncKeyState(VkLButton) & 0x8000) != 0;
+
+        if (down && !pollDragging)
+        {
+            // Never start a gesture outside the pet: the region behind it is the
+            // desktop and a click there must stay a click on the desktop.
+            if (!IsHit(x, y)) return;
+            pollDragging = true;
+            pollMoved = false;
+            pollDownAt = point;
+            pollDownWhen = DateTime.UtcNow;
+            SendMouse("down", x, y, 1);
+            return;
+        }
+
+        if (pollDragging && down)
+        {
+            if (Distance(point, pollDownAt) > 3 * scale) pollMoved = true;
+            SendMouse("move", x, y, 1);
+            return;
+        }
+
+        if (!pollDragging) return;
+
+        pollDragging = false;
+        SendMouse("up", x, y, 0);
+        var now = DateTime.UtcNow;
+        var quick = (now - pollDownWhen).TotalMilliseconds < 400 && !pollMoved;
+        var repeat = (now - pollLastUpWhen).TotalMilliseconds < 400 && Distance(point, pollLastUpAt) < 8 * scale;
+        if (quick && repeat)
+        {
+            SendMouse("dbl", x, y, 0);
+            pollLastUpWhen = DateTime.MinValue;
+        }
+        else
+        {
+            pollLastUpWhen = now;
+            pollLastUpAt = point;
+        }
+    }
+
+    /// <summary>Hit rects arrive in CSS pixels; the region lives in device pixels.</summary>
+    private static Rectangle Scale(Rectangle rect, double scale) =>
+        rect.IsEmpty
+            ? rect
+            : new Rectangle(
+                (int)Math.Round(rect.X * scale),
+                (int)Math.Round(rect.Y * scale),
+                (int)Math.Round(rect.Width * scale),
+                (int)Math.Round(rect.Height * scale));
+
+    /// <summary>Keeps the invisible click window glued to the visible one.</summary>
+    private void SyncCatcher()
+    {
+        if (catcher is null || !IsHandleCreated) return;
+        if (catcher.Bounds != Bounds) catcher.Bounds = Bounds;
+        var scale = UiScale;
+        catcher.Shape(Scale(petRect, scale), Scale(panelRect, scale));
+    }
+
+    /// <summary>
+    /// Replays a gesture the click window actually received. Real messages are
+    /// always better than polling, so the first one switches sampling off.
+    /// </summary>
+    private void ForwardAt(string kind, int px, int py, int buttons, int delta)
+    {
+        if (!ready || !pageReady || web?.CoreWebView2 is null) return;
+        directInput = true;
+        if (inputTimer.Enabled) inputTimer.Stop();
+        var scale = UiScale;
+        Native.GetCursorPos(out var cursor);
         var script = "window.__petInput && window.__petInput('" + kind + "'," +
-                     Num(e.X / scale) + "," + Num(e.Y / scale) + "," +
+                     Num(px / scale) + "," + Num(py / scale) + "," +
                      Num(cursor.X / scale) + "," + Num(cursor.Y / scale) + "," +
-                     buttons + "," + deltaY + ")";
+                     buttons + "," + delta + ")";
+        _ = web.CoreWebView2.ExecuteScriptAsync(script);
+    }
+
+    private void SendMouse(string kind, double x, double y, int buttons)
+    {
+        Native.GetCursorPos(out var cursor);
+        var scale = UiScale;
+        var script = "window.__petInput && window.__petInput('" + kind + "'," +
+                     Num(x) + "," + Num(y) + "," +
+                     Num(cursor.X / scale) + "," + Num(cursor.Y / scale) + "," +
+                     buttons + ",0)";
         _ = web.CoreWebView2.ExecuteScriptAsync(script);
     }
 
@@ -371,48 +583,6 @@ internal sealed class PetForm : Form
 
     private static string Num(double value) =>
         value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
-        base.OnMouseDown(e);
-        if (e.Button == MouseButtons.Left)
-        {
-            // Capture so a fast drag keeps feeding the page even when the
-            // pointer leaves the small window rectangle.
-            mouseDown = true;
-            Capture = true;
-        }
-        ForwardMouse("down", e);
-    }
-
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        ForwardMouse("move", e);
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (mouseDown)
-        {
-            mouseDown = false;
-            Capture = false;
-        }
-        ForwardMouse("up", e);
-    }
-
-    protected override void OnMouseDoubleClick(MouseEventArgs e)
-    {
-        base.OnMouseDoubleClick(e);
-        ForwardMouse("dbl", e);
-    }
-
-    protected override void OnMouseWheel(MouseEventArgs e)
-    {
-        base.OnMouseWheel(e);
-        ForwardMouse("wheel", e, e.Delta);
-    }
 
     private void PushState()
     {
